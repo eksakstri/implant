@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Inpaint Web App</title>
+  <style>
+    #canvas { border: 1px solid black; cursor: crosshair; }
+    #result { max-width: 400px; margin-top: 20px; display: block; }
+  </style>
+</head>
+<body>
+  <h1>Stable Diffusion Inpainting</h1>
+
+  <input type="file" id="imageUploader" accept="image/*"><br><br>
+
+  <canvas id="canvas"></canvas><br><br>
+
+  <label for="prompt">Prompt:</label><br>
+  <input type="text" id="prompt" name="prompt" required><br><br>
+
+  <button id="submitBtn">Submit for Inpainting</button>
+
+  <h2>Inpainted Region:</h2>
+  <img id="result" src="">
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    let image = new Image();
+    let startX, startY, endX, endY, isDrawing = false;
+    let uploadedImage = null;
+
+    document.getElementById("imageUploader").addEventListener("change", function(e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        image.onload = function() {
+          canvas.width = image.width;
+          canvas.height = image.height;
+          ctx.drawImage(image, 0, 0);
+        };
+        image.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    canvas.addEventListener("mousedown", e => {
+      const rect = canvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      isDrawing = true;
+    });
+
+    canvas.addEventListener("mousemove", e => {
+      if (!isDrawing) return;
+      const rect = canvas.getBoundingClientRect();
+      endX = e.clientX - rect.left;
+      endY = e.clientY - rect.top;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0);
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(startX, startY, endX - startX, endY - startY);
+    });
+
+    canvas.addEventListener("mouseup", () => {
+      isDrawing = false;
+    });
+
+    document.getElementById("submitBtn").addEventListener("click", async () => {
+      const prompt = document.getElementById("prompt").value;
+      const cropWidth = endX - startX;
+      const cropHeight = endY - startY;
+
+      // Create cropped image from canvas
+      const cropCanvas = document.createElement("canvas");
+      cropCanvas.width = cropWidth;
+      cropCanvas.height = cropHeight;
+      const cropCtx = cropCanvas.getContext("2d");
+      cropCtx.drawImage(canvas, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+      cropCanvas.toBlob(async (blob) => {
+        const formData = new FormData();
+        formData.append("image", blob, "cropped.png");
+        formData.append("prompt", prompt);
+
+        const response = await fetch("/inpaint", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (response.ok) {
+          const resultBlob = await response.blob();
+          const resultUrl = URL.createObjectURL(resultBlob);
+          document.getElementById("result").src = resultUrl;
+        } else {
+          alert("Inpainting failed.");
+        }
+      }, "image/png");
+    });
+  </script>
+</body>
+</html>
